@@ -7,41 +7,66 @@ Created on Sun Mar  3 19:40:12 2019
 
 import numpy as np
 import matplotlib.pyplot as plt
-import inputProcessing
-import ScenarioGeneratio
+from ScenarioGeneratio import generate_Sample_Avr
 from gurobipy import Model, Var, GRB, quicksum
-import MDP_robust 
+from MDP_robust import solveMDP_robust 
+import FullMDP, FullMDP_Terminal 
 import pdb
-import averageRH
-import RH
+from averageRH import solveAverageRH
+from RH import solveRH
 import time
+import json
 
 
 
+def read_parameters_form_json(file_name):
+    with open(file_name) as f:
+        config = json.load(f)
+    return config
 
-wp=inputProcessing.readProcessParams('I_processparametersAR1.txt')
-gp=inputProcessing.readProblemParams('I_problemParams.txt')
-l_init=100
-q_init=50
-c_init=0 
-W=generate_AR1(gp[0], gp[1], wp)
-I2= 180
-K=int(gp[1])
+config = read_parameters_form_json('Parameters.json')
+# intiial servior level
+l_init = 10000
+# initial capacity
+q_init = 33290
+# initial plant condition
+c_init = config['plant_cond0']
+# Generating samples
+Samples = generate_Sample_Avr()
+initial_condition = {'X0': config['X0'], 'Y0': config['Y0'],\
+                    'Inflow0': config['Inflow0'], 'Start_time': 0,\
+                    'Gamma0': config['plant_cond0']}
+W = Samples.generate_Sample(config['nPeriods']+1, config['n_Samples'], initial_condition)
+
+# Calculating upper bound
 start_time = time.time()
-ub, XAvg= solveMDP_robust(gp, int(gp[0]), int(gp[1]), W, l_init, q_init, c_init, I2)
+PerfectInformation_MDP = FullMDP_Terminal.solveMDP(config['nPeriods'], config['n_Samples'], W, l_init, q_init, c_init, numProcess=25)
+ub, XAvg = PerfectInformation_MDP.output()
 Perfectinfo_time = time.time() - start_time
-upper_bound= np.sum(ub,0)/len(ub)
+upper_bound= ub
+print("Perfectinfo_time", Perfectinfo_time)
 print("######################################################")
 print("Terminated Perfect Information")
 
-#start_time = time.time()
-#lower_bound_ARH= solveAverageRH(gp, wp, W, l_init, q_init, c_init, I2)
-#print('Ub : {}, Lb : {}'. format(upper_bound, lower_bound_ARH))
-#print((upper_bound-lower_bound_ARH)/ upper_bound)
-#DRH_time = time.time() - start_time
-#
-#start_time = time.time()
-#lower_bound_RH= solveRH(gp, wp, W, l_init, q_init, c_init, I2)
-#print('Ub : {}, Lb : {}'. format(upper_bound, lower_bound_RH))
-#print((upper_bound-lower_bound_RH)/ upper_bound)
-#RH_time = time.time() - start_time
+# Dual Reoptimization heuristic
+'''
+start_time = time.time()
+lower_bound_ARH = solveAverageRH(W, l_init, q_init, c_init, numProcess=20)
+print('Ub : {}, Lb : {}'. format(upper_bound, lower_bound_ARH))
+print((upper_bound-lower_bound_ARH)/ upper_bound)
+DRH_time = time.time() - start_time
+print("DRH_time", DRH_time)
+'''
+
+
+#  Reoptimization heuristic
+"""
+start_time = time.time()
+lower_bound_RH= solveRH(W, l_init, q_init, c_init, numProcess=1)
+print('Ub : {}, Lb : {}'. format(upper_bound, lower_bound_RH))
+print((upper_bound-lower_bound_RH)/ upper_bound)
+RH_time = time.time() - start_time
+print("RH_time", RH_time)
+print("######################################################")
+print("Terminated Perfect Information")
+"""
