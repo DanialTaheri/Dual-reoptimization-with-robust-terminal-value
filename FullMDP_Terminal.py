@@ -1,10 +1,11 @@
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from ScenarioGeneratio import generate_Sample_Avr
 from gurobipy import Model, Var, GRB, quicksum
 import multiprocessing
 from abc import ABCMeta, abstractmethod
 import json
+import collections
 #import ScenarioGeneratio 
 
 
@@ -43,6 +44,7 @@ class solveMDP:
         self.K = K
         self.I = I
         self.config = read_parameters_form_json('Parameters.json')
+        self.W = W
         self.Price = np.multiply(np.multiply(W[:, :, 0], W[:, :, 1]), W[:, :, 2])
         self.Inflow = np.multiply(W[:, :, 3], W[:, :, 4])
         self.Condition = W[:, :, 5] 
@@ -64,7 +66,7 @@ class solveMDP:
         RefAvg = finalSum[3]/self.K
         FlrAvg = finalSum[4]/self.K
         UBAvg = finalSum[5]/self.K
-
+        
         if RefAvg> 0.5:
             RefAvg=1
             UpAvg= UpAvg
@@ -85,9 +87,11 @@ class solveMDP:
         return finalSum
     
     def solveMDP_Parallel(self, SubSamples):
+        
+        
         L_min =self.config['minLevel']
         L_max = self.config['maxLevel']
-        ub = np.zeros(SubSamples)
+        Upper_bound = np.zeros(SubSamples)
         M = 2 * self.q_init  
         T_R_down = self.config['ref_down']
         T_F_down = self.config['failure_down']
@@ -96,10 +100,9 @@ class solveMDP:
         C_U = self.config['CostUp']
         disc_fac = self.config['disc_rate']
         EnergyCoeff = self.config['EnergyCoeff']
-        self.gran_theta1 = 2000
-        self.gran_theta2 = 0.2
-        largenumber = 2*L_max
-        
+        model_type = self.config['model_type']
+
+
         
         GenSum = 0
         UpSum = 0
@@ -108,41 +111,77 @@ class solveMDP:
         FlrSum = 0
         
         # loop over all sample paths
+        Table_nb = []
         for k in range(SubSamples):
-            if self.Price[self.I, k] < 25:
-                self.table = read_table('RobustTables/Table-modelrobust-category1-capacity36000.json')
-            elif 25 <= self.Price[self.I, k] < 50:
-                self.table = read_table('RobustTables/Table-modelrobust-category2-capacity36000.json')
-            elif 50 <= self.Price[self.I, k] < 75:
-                self.table = read_table('RobustTables/Table-modelrobust-category3-capacity36000.json')
-            elif 75 <= self.Price[self.I, k] <= 100:
-                self.table = read_table('RobustTables/Table-modelrobust-category4-capacity36000.json')
-            else:
-                self.table = read_table('RobustTables/Table-modelrobust-category5-capacity36000.json')
-                
+            nb_bins = 2
+            threshold = 0.63
+            nb_features = 4
+            # [res_coef, cond_coef, intercept]
+            # Feature coefficients extracted from robust tables
+            beta = np.zeros((nb_features, nb_bins))
+            
+            if model_type == 'robust':
+                if self.W[self.I, k, 2] < 25:
+                    beta[0, :] = [1.5543, 0.585]
+                    beta[1, :] = [-2355202.905, -8124486.412]
+                    beta[2, :] = [103.418, 44.1719]
+                    beta[3, :] = [460480.896, 6746857.459]
+                elif 25 <= self.W[self.I, k, 2] < 40:
+                    beta[0, :] = [3.272, 1.355]
+                    beta[1, :] = [-4197748.55, -14395691]
+                    beta[2, :] = [181.702, 77.205]
+                    beta[3, :] = [788321, 11931227]
+                elif 40 <= self.W[self.I, k, 2] < 55:
+                    beta[0, :] = [5.197, 2.1657]
+                    beta[1, :] = [-6487780.282, -22166358.884]
+                    beta[2, :] = [279.166, 117.645]
+                    beta[3, :] = [1215310, 18383787]
+                elif 55 <= self.W[self.I, k, 2] <= 70:
+                    beta[0, :] = [7.816748016329668, 3.3523]
+                    beta[1, :] = [-9348774.127, -31900687.36]
+                    beta[2, :] = [400.979, 168.6723]
+                    beta[3, :] = [1726348, 26437073]
+                else:
+                    beta[0, :] = [14.3146, 6.2848]
+                    beta[1, :] =  [-16522199.781, -56264542.861]
+                    beta[2, :] = [705.426, 295.418]
+                    beta[3, :] = [705.426, 46618850]
 
-            # read the table of terminal value
-            Month = '0'
-            features = {}
-            feature1 = []
-            feature2 = []
-            value = []
-            for elem in self.table[Month]:
-                features[(elem[0]*self.gran_theta1, elem[1]/100.)] = elem[2]
-                feature1.append(elem[0]*self.gran_theta1)
-                feature2.append(elem[1]/100.)
-                value.append([elem[2]])
-            n_feature1 = sorted(set(feature1))
-            n_feature2 = sorted(set(feature2))
+                    
+                    
+            elif model_type == 'nominal':
+                if self.W[self.I, k, 2] < 25:
+                    beta[0, :] = [0.6339643048973409, 0.32416678020887013]
+                    beta[1, :] = [-6922512.525771472, -23273109.217998378]
+                    beta[2, :] = [14017378.79, 24210679.434]
 
-            Terminal_value = np.zeros((len(n_feature1), len(n_feature2)))
-            for i, f1 in enumerate(n_feature1):
-                for j, f2 in enumerate(n_feature2):
-                    Terminal_value[i, j] = features[(f1, f2)]
+                elif 25 <= self.W[self.I, k, 2] < 40:
+                    beta[0, :] = [1.1141278155210295, 0.568316219837665]
+                    beta[1, :] = [-12233805.510731239, -41187870.70060356]
+                    beta[2, :] = [24798217.011, 42854854.42]
+                    
+                elif 40 <= self.W[self.I, k, 2] < 55:
+                    beta[0, :] = [1.6757386471552294, 0.8533672154817823]
+                    beta[1, :] = [-18495514.2059734, -62249939.595300876]
+                    beta[2, :] = [37484193.9,  64767347.22]
+                    
+                elif 55 <= self.W[self.I, k, 2] <= 70:
+                    beta[0, :] = [2.429242996467785, 1.2352535933265176]
+                    beta[1, :] = [-26879703.91652888, -90470858.94148476]
+                    beta[2, :] = [54479857.59, 94132023.05]
+                    
+                else:
+                    beta[0, :] = [4.256425664491066, 2.1621733310195226]
+                    beta[1, :] =  [-47227835.343741596, -158919486.96210086]
+                    beta[2, :] = [95706049.9088, 165347979.473]
+                    
+
             # Model
             perfectInfo = Model("GenAndUpg")
+            perfectInfo.Params.TimeLimit= 50
+            #if self.c_init > threshold:
+            #perfectInfo.Params.nonconvex = 2
             # defining the variables
-            
             
             Gen=[]
             for x_G in range(self.I):
@@ -151,7 +190,7 @@ class solveMDP:
             
             Up=[]    
             for x_U in range(self.I):
-                    Up.append(perfectInfo.addVar(lb=0, ub = 0.5* self.q_init, vtype=GRB.CONTINUOUS,  name="Up[%d]" %x_U))
+                    Up.append(perfectInfo.addVar(lb=0, ub = 0.5 * self.q_init, vtype=GRB.CONTINUOUS,  name="Up[%d]" %x_U))
 
             Sp=[]    
             for x_S in range(self.I):
@@ -186,54 +225,61 @@ class solveMDP:
             for c in range(self.I +1):
                 Con.append(perfectInfo.addVar(lb=0 , ub=1, vtype=GRB.CONTINUOUS,
                                               name="Con[%d]" %c))      
-
-            Terminal_decision = perfectInfo.addVars(len(n_feature1), len(n_feature2), lb = 0, vtype = GRB.BINARY,\
-                                                    name="Terminal_decision")
-            theta1_bin=[]
-            for item1 in range(len(n_feature1)):
-                theta1_bin.append(perfectInfo.addVar(lb = 0, vtype = GRB.BINARY, 
-                                                            name="theta1_bin[%d]" %(item1)))
-            theta2_bin=[]
-            for item2 in range(len(n_feature2)):
-                theta2_bin.append(perfectInfo.addVar(lb = 0, vtype = GRB.BINARY, 
-                                                            name="theta2_bin[%d]" %(item2)))
+                
+            theta = []
+            for item in range(nb_bins):
+                theta.append(perfectInfo.addVar(lb = 0, vtype = GRB.BINARY, 
+                                                            name="theta[%d]" %(item)))
+                
             
+            Coef_terminal = perfectInfo.addVars(range(nb_features), range(nb_bins), vtype = GRB.CONTINUOUS)
+            
+#             Coef_terminal = []
+#             for item in range(nb_features):
+#                 Coef_terminal.append(perfectInfo.addVar(lb = -10e+9, vtype = GRB.CONTINUOUS, 
+#                                                             name="Coef_terminal[%d]" %(item)))
+                
 
             perfectInfo.ModelSense = GRB.MAXIMIZE
             perfectInfo.setObjective(quicksum([quicksum([self.Price[time, k]* EnergyCoeff* \
-                                         np.power(disc_fac, time)*Gen[time]-\
-                                         C_U*np.power(disc_fac, time) *\
-                                         Up[time] - C_R * np.power(disc_fac,time) * Ref[time] -\
-                                         C_F* np.power(disc_fac,time)*Flr[time] for time in range(self.I)]),\
-                                               np.power(disc_fac, self.I) * quicksum([Terminal_value[dim1, dim2]*Terminal_decision[dim1, dim2]\
-                                               for dim1 in range(len(n_feature1)) for dim2 in range(len(n_feature2))\
-                                                        ])\
+                                        np.power(disc_fac, time)*Gen[time]-\
+                                        C_U*np.power(disc_fac, time) *Up[time] -\
+                                        C_R * np.power(disc_fac,time) * Ref[time] -\
+                                        C_F* np.power(disc_fac,time)*Flr[time] for time in range(self.I)]),\
+                                      np.power(disc_fac,self.I)*quicksum([Coef_terminal[_ft,_bin]*\
+                                      beta[_ft, _bin] for _ft in range(nb_features) for _bin in range(nb_bins)])
                                               ]))
+    
+            perfectInfo.addConstr(
+                    (quicksum(theta[item] for item in range(nb_bins)) == 1))
             
-            # constraints
+#  
+                
+            
+#             for feature in range(nb_features):
+#                 perfectInfo.addConstr(
+#                     (Coef_terminal[feature] - beta[feature, 0] * theta[0] - beta[feature, 1] * theta[1]  == 0)) 
+            U = [L_max, 1, 2* self.q_init]
+            L = [0, 0, self.q_init]
+            Var = [Res[self.I], Con[self.I], Cap[self.I]]
+            for _ft in range(nb_features-1):
+                for _bin in range(nb_bins):
+                    perfectInfo.addConstr(
+                        (Coef_terminal[_ft, _bin] - U[_ft] * theta[_bin] <= 0)) 
+                    perfectInfo.addConstr(
+                        (Coef_terminal[_ft, _bin] - Var[_ft] + L[_ft]*(1- theta[_bin]) <= 0)) 
+                    perfectInfo.addConstr(
+                        (-Coef_terminal[_ft, _bin] + Var[_ft] - U[_ft]*(1- theta[_bin]) <= 0))
+            for _bin in range(nb_bins):
+                perfectInfo.addConstr(
+                    (Coef_terminal[3, _bin] - theta[_bin] == 0)) 
+                
             perfectInfo.addConstr(
-                    (quicksum(theta1_bin[item] for item in range(len(n_feature1))) == 1))
-            perfectInfo.addConstr(
-                    (quicksum(theta2_bin[item] for item in range(len(n_feature2))) == 1))
+                     (Con[self.I] - threshold - (1 - theta[0]) <= 0))
 
-            for item1 in range(len(n_feature1)):
-                for item2 in range(len(n_feature2)):
-                    perfectInfo.addConstr(-theta1_bin[item1] - theta2_bin[item2] +\
-                                              3 * Terminal_decision[item1, item2] <= 0)
-                
-            for item in range(len(n_feature1)):
-                perfectInfo.addConstr(-Res[self.I] + (2*item -1) * self.gran_theta1/2. \
-                                      - largenumber *(1-theta1_bin[item]) <= 0)
-                perfectInfo.addConstr(Res[self.I] - (2*item +1) * self.gran_theta1/2. \
-                                      - largenumber *(1-theta1_bin[item]) <= 0)
-                
-            for item in range(len(n_feature2)):
-                perfectInfo.addConstr(-Con[self.I] + (2*(item) -1) * self.gran_theta2/2. \
-                                      - largenumber *(1-theta2_bin[item]) <= 0)
-                perfectInfo.addConstr(Con[self.I] - (2* item +1) * self.gran_theta2/2. \
-                                      - largenumber *(1-theta2_bin[item]) <= 0)      
-                  
-          
+            perfectInfo.addConstr(
+                    (-Con[self.I] + threshold - (1 - theta[1]) <= 0))
+
                 
             # Initial constraints
             ####################################################
@@ -247,22 +293,18 @@ class solveMDP:
                     (Con[0]- self.c_init == 0), "initial_condition")    
             ########################################################
             
-            
             for i in range(self.I):  
                 perfectInfo.addConstr(
-                        (Gen[i]- Cap[i] <= 0), "Generation_cap1")
+                        (Gen[i]- Cap[i] <= 0), "Generation_cap1_%d"%i)
 
             for i in range(self.I):   
                 perfectInfo.addConstr(
-                        (Gen[i] - Res[i] <= 0), "Generation_cap2") 
+                        (Gen[i] - Res[i] <= 0), "Generation_cap2_%d"%i) 
                 
-#                perfectInfo.addConstr(
-#                        (Gen[i]- Res[i]- self.Inflow[i, k] <= 0), "Generation_cap2")   
-            
+
             for i in range(self.I):     
                 perfectInfo.addConstr(
-                        (Up[i]- 0.5* self.q_init * Ref[i] <= 0), "Upgrade_cap.")    
-
+                        (Up[i]- 0.5 * self.q_init * Ref[i] <= 0), "Upgrade_cap_%d"%i)    
 
             for i in range(self.I):     
                 perfectInfo.addConstr(
@@ -300,22 +342,20 @@ class solveMDP:
                 perfectInfo.addConstr(
                         (Con[i+1]- Con[i] - (self.Condition[i, k])* Gen_b[i] + (Con[i]) * Ref[i] == 0))
                 
-
+            # fixing the refurbishment 8 weeks before the end of MDP to zero
+            for i in range(max(self.I-1- T_R_down, 0), self.I):
+                perfectInfo.addConstr(
+                        (Ref[i] == 0))
 
             perfectInfo.write('GenAndUpg.lp') 
 
-            
             perfectInfo.optimize()  
-            print('l_init, c_init, q_init', self.l_init, self.c_init, self.q_init)
-#            print('price, inflow, condition', self.Price[:,k], self.Inflow[:, k], 
-#                 self.Condition[:, k])
-            print('Gen[0]: {},Up[0]: {}, Sp[0]:{}, Ref[0]:{}, Flr[0]:{} \n'. format(
-                             Gen[0].x, Up[0].x, Sp[0].x, Ref[0].x, Flr[0].x))
+            #print("theta_0: {}, theta_1:{}".format(theta[0].x, theta[1].x))
 
 
             if perfectInfo.status == GRB.Status.OPTIMAL:
                 print('Optimal objective: %g' % perfectInfo.objVal)
-                ub[k]= perfectInfo.objVal
+                Upper_bound[k]= perfectInfo.objVal
     #        else:
     #            ub[k]= M
             elif perfectInfo.status == GRB.Status.INF_OR_UNBD:
@@ -330,7 +370,17 @@ class solveMDP:
                 exit(0)
             else:  
                 print('Optimization ended with status %d' % perfectInfo.status)
-
+            
+#             for _ft in range(nb_features):
+#                 for _bin in range(nb_bins):
+#                     print("Coefficient[{}, {}]: {} ".format(_ft, _bin, Coef_terminal[_ft, _bin].x))
+            
+#             for _bin in range(nb_bins):
+#                 print("theta[{}]: {} ".format(_bin, theta[_bin].x))
+                
+#             print(quicksum([Coef_terminal[_ft,_bin].x*\
+#                                       beta[_ft, _bin] for _ft in range(nb_features) for _bin in\
+#                                                       range(nb_bins)]))
             #refering to decisions at current period    
             GenSum+= Gen[0].x
 
@@ -338,15 +388,10 @@ class solveMDP:
             SpSum+= Sp[0].x
             RefSum+= Ref[0].x 
             FlrSum+= Flr[0].x
-        UB = np.sum(ub)
-        return [GenSum, UpSum, SpSum, RefSum, FlrSum, UB]
-
-
-
-       
-
-     
-       
-
+#             path = "config_bounds.json"
+#             with open(path, 'a') as f:
+#                 f.write(str(perfectInfo.MIPGap))
+#                 f.write('\n')
         
-
+        UB = np.sum(Upper_bound)
+        return [GenSum, UpSum, SpSum, RefSum, FlrSum, UB]

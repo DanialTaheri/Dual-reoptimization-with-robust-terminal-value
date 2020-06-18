@@ -6,7 +6,7 @@ Created on Mon Mar  4 20:04:36 2019
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import ScenarioGeneratio
 from gurobipy import Model, Var, GRB, quicksum
 import FullMDP, FullMDP_Terminal

@@ -3,7 +3,7 @@ import scipy as sp
 import scipy.stats as stats
 from scipy.special import gammainc
 import warnings
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 class Jump_Diffusion_process(object):
     def __init__(self, dict):    

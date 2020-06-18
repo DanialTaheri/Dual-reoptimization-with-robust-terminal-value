@@ -1,5 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from ScenarioGeneratio import generate_Sample_Avr
 from gurobipy import Model, Var, GRB, quicksum
 import multiprocessing
@@ -221,18 +221,18 @@ class solveMDP:
                 
 
             perfectInfo.write('GenAndUpg.lp') 
-            print('l_init, c_init, q_init', self.l_init, self.c_init, self.q_init)
-            print('price, inflow, condition', self.Price[:,k], self.Inflow[:, k], 
-                 self.Condition[:, k])
+#            print('l_init, c_init, q_init', self.l_init, self.c_init, self.q_init)
+#            print('price, inflow, condition', self.Price[:,k], self.Inflow[:, k], 
+#                 self.Condition[:, k])
 
             perfectInfo.optimize()  
-            print('Gen[0]: {},Up[0]: {}, Sp[0]:{}, Ref[0]:{}, Flr[0]:{} \n'. format(
-                             Gen[0].x, Up[0].x, Sp[0].x, Ref[0].x, Flr[0].x))
+#            print('Gen[0]: {},Up[0]: {}, Sp[0]:{}, Ref[0]:{}, Flr[0]:{} \n'. format(
+#                             Gen[0].x, Up[0].x, Sp[0].x, Ref[0].x, Flr[0].x))
 
 
-            print('Sample path: {:.4f}'.format(k))
-            for i in range(self.I):
-                print('Week {}: Optimal generation: {:.4f}'. format(i, Gen[i].x))
+ #           print('Sample path: {:.4f}'.format(k))
+#            for i in range(self.I):
+#                print('Week {}: Optimal generation: {:.4f}'. format(i, Gen[i].x))
             if perfectInfo.status == GRB.Status.OPTIMAL:
                 print('Optimal objective: %g' % perfectInfo.objVal)
                 ub[k]= perfectInfo.objVal

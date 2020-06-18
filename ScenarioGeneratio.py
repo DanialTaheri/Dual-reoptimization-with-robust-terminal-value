@@ -4,7 +4,7 @@ Spyder Danial Mohseni Taheri
 
 """
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import pandas as pd
 import json
 import math
@@ -37,12 +37,14 @@ class generate_Sample_Avr:
         return config
         
     def generate_Sample(self, I, K, initial_condition):
+        np.random.seed(42)
         T = self.config['nPeriods'] * self.config['dt']
         self.Inflow0 = initial_condition['Inflow0']
         self.X0 = initial_condition['X0']
         self.Y0 = initial_condition['Y0']
         
         def generate_loginf_logprice(T):
+            
             dwX = np.random.normal(0, 1, I)
             dwY = np.random.normal(0, 1, I)
             dwInflow = np.random.normal(0, np.sqrt((1-np.exp(-2 * self.KInflow * self.dt))/\
@@ -62,14 +64,13 @@ class generate_Sample_Avr:
             for i in range(1, I):
                 x[i] = x[i-1]* math.exp(-self.KX * self.dt)-\
                 self.lambdaX*(1 - math.exp(-self.KX*self.dt))+\
-                S_chol[0,0]*dwX[i-1]
+                S_chol[0,0]*dwX[i-1] + S_chol[1,0]*dwX[i-1]
                                         
-                y[i] = y[i-1] + self.muY*self.dt + S_chol[1,0]*dwX[i-1]+\
-                S_chol[1,1]*dwY[i-1]
+                y[i] = y[i-1] + self.muY*self.dt + S_chol[1,1]*dwY[i-1]
                 Inflow[i] = Inflow[i-1] * math.exp(-self.KInflow * self.dt)+\
                 self.sigmaInflow * dwInflow[i-1]
             return x, y, Inflow
-
+        
         #Store inflow (I) and price (P) on original scale
         w = np.zeros((I, K, 6))
         start_time_position = {"startTime": initial_condition['Start_time'], "startPosition": initial_condition['Gamma0']}
@@ -113,9 +114,6 @@ class generate_Sample_Avr:
             Inflow0
             Inflow_Var = self.InflowSd[(i+T_0)%52]**2 * (1-math.exp(-2*self.KInflow*i* self.dt))*\
             self.sigmaInflow**2/(2*self.KInflow)
-            if i == 0:
-                print("Inside scenario, X_0", price_shorttermMean)
-                print("Inside scenario, Y_0", price_longtermMean)
             for k in range(K):
                 E_w[i, k, 0] = np.exp(price_constant + 0.5 * price_variance)
                 E_w[i, k, 1] = np.exp(price_shorttermMean)
@@ -142,28 +140,49 @@ if __name__ == '__main__':
     w = Sample.generate_Sample(initial_condition)
     E_w = Sample.generate_Average(I, K, initial_condition)
     
-    plt.figure()
-    plt.plot(range(config['nPeriods']), np.multiply(E_w[:, :, 3], E_w[:, :, 4]) )
-    #plt.plot(range(n), meanI.transpose())
-    plt.xlabel("Time(week)")
-    plt.ylabel("det. rate")
-    plt.show()
-
-
-
-
-    #Price plot
-    plt.figure()
-    plt.plot(range(config['nPeriods']), np.mean(np.multiply(w[:, :, 3], w[:, :, 4]), axis = 1), label = "emprical mean")
-    plt.plot(range(config['nPeriods']), np.multiply(E_w[:, 1, 3], E_w[:, 1, 4]), label = "closed-form")
-    plt.xlabel("Time(week)")
-    plt.ylabel("det. rate")
-    plt.legend()
-    plt.show()
-    #Price plot
-    plt.figure()
-    plt.plot(range(config['nPeriods']), np.multiply(w[:, :, 3], w[:, :, 4]))
-
-    plt.xlabel("Time(week)")
-    plt.ylabel("det. rate")
-    plt.show()
+    X = 1
+    if X == 1:
+        #Price plot
+        plt.figure()
+        plt.plot(range(config['nPeriods']), np.mean(np.multiply(np.multiply(E_w[:, :, 0], E_w[:, :, 1]), E_w[:, :, 2]), axis = 1), label = "emprical mean")
+        plt.plot(range(config['nPeriods']), np.multiply(np.multiply(E_w[:, :, 0], E_w[:, :, 1]), E_w[:, :, 2] ), label = "closed-form")
+        plt.xlabel("Time(week)")
+        plt.ylabel("det. rate")
+        plt.legend()
+        plt.show()
+        #Price plot
+        plt.figure()
+        plt.plot(range(config['nPeriods']), np.multiply(np.multiply(w[:, :, 0], w[:, :, 1]), w[:, :, 2]))
+        plt.xlabel("Time(week)")
+        plt.ylabel("det. rate")
+        plt.show()
+    elif X == 2:
+        #Price plot
+        plt.figure()
+        plt.plot(range(config['nPeriods']), np.mean(np.multiply(w[:, :, 3], w[:, :, 4]), axis = 1), label = "emprical mean")
+        plt.plot(range(config['nPeriods']), np.multiply(E_w[:, 1, 3], E_w[:, 1, 4]), label = "closed-form")
+        plt.xlabel("Time(week)")
+        plt.ylabel("det. rate")
+        plt.legend()
+        plt.show()
+        #Price plot
+        plt.figure()
+        plt.plot(range(config['nPeriods']), np.multiply(w[:, :, 3], w[:, :, 4]))
+        plt.xlabel("Time(week)")
+        plt.ylabel("det. rate")
+        plt.show()
+    else:
+        #Price plot
+        plt.figure()
+        plt.plot(range(config['nPeriods']), np.mean( w[:, :, 5], axis = 1), label = "emprical mean")
+        plt.plot(range(config['nPeriods']),  E_w[:, 1, 5], label = "closed-form")
+        plt.xlabel("Time(week)")
+        plt.ylabel("det. rate")
+        plt.legend()
+        plt.show()
+        #Price plot
+        plt.figure()
+        plt.plot(range(config['nPeriods']), w[:, :, 5])
+        plt.xlabel("Time(week)")
+        plt.ylabel("det. rate")
+        plt.show()
